@@ -17,6 +17,9 @@
 /.next/
 /out/
 
+# local gift storage (lib/store.ts)
+/data
+
 # production
 /build
 

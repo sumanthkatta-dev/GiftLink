@@ -1,26 +1,739 @@
 @import "tailwindcss";
 
+/* ---------------------------------------------------------------- Themes */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Gift box wrap: dark midnight. Also the theme of the sender's pages. */
+  --bg: #1a1433;
+  --text: #fff6e5;
+  --accent: #f7b32b;
+  --accent-ink: #1a1433;
+  --box: #ff5d8f;
+  --muted: #bdb3d9;
+  --surface: rgb(255 246 229 / 0.06);
+  --border: rgb(189 179 217 / 0.28);
+  --danger: #ff9db8;
+  --panel-bg: rgb(255 246 229 / 0.07);
+  --panel-solid: rgb(48 38 88 / 0.86);
+  --panel-border: rgb(255 255 255 / 0.16);
+  --panel-shadow: inset 0 1px 0 rgb(255 255 255 / 0.16), 0 14px 34px rgb(0 0 0 / 0.28);
+  --panel-blur: blur(16px) saturate(140%);
+  --btn-bg: linear-gradient(180deg, #ffcf5c, #f7b32b 60%, #eba417);
+  --btn-shadow: inset 0 1px 0 rgb(255 255 255 / 0.55), 0 10px 26px rgb(247 179 43 / 0.3);
+  --heading-font: var(--font-bricolage), system-ui, sans-serif;
+  --body-font: var(--font-dm-sans), system-ui, sans-serif;
+  color-scheme: dark;
+}
+
+.theme-envelope {
+  /* Envelope wrap: light and clean. */
+  --bg: #f4f2ee;
+  --text: #16161a;
+  --accent: #2d4bff;
+  --accent-ink: #ffffff;
+  --muted: #62626c;
+  --surface: #ffffff;
+  --border: #dcd8cf;
+  --danger: #c22a4b;
+  --panel-bg: #ffffff;
+  --panel-solid: #ffffff;
+  --panel-border: #e6e2d9;
+  --panel-shadow: 0 12px 30px rgb(22 22 26 / 0.07);
+  --panel-blur: none;
+  --btn-bg: linear-gradient(180deg, #4a65ff, #2d4bff 60%, #2540e6);
+  --btn-shadow: inset 0 1px 0 rgb(255 255 255 / 0.3), 0 10px 24px rgb(45 75 255 / 0.28);
+  --heading-font: var(--font-manrope), system-ui, sans-serif;
+  --body-font: var(--font-manrope), system-ui, sans-serif;
+  color-scheme: light;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-bg: var(--bg);
+  --color-ink: var(--text);
+  --color-accent: var(--accent);
+  --color-muted: var(--muted);
+  --color-line: var(--border);
+  --color-surface: var(--surface);
+  --color-danger: var(--danger);
+  --font-heading: var(--heading-font);
+  --font-body: var(--body-font);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--body-font);
+  }
+
+  /* Soft coloured light drifting behind every dark page. No blur filter, so it stays cheap. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: -20%;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(38% 32% at 22% 28%, rgb(255 93 143 / 0.24), transparent 70%),
+      radial-gradient(42% 36% at 82% 22%, rgb(124 92 255 / 0.3), transparent 70%),
+      radial-gradient(48% 38% at 55% 92%, rgb(247 179 43 / 0.17), transparent 70%);
+    animation: aurora-drift 26s ease-in-out infinite alternate;
+  }
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-image:
+      radial-gradient(1.5px 1.5px at 12% 18%, #fff6e5 50%, transparent 52%),
+      radial-gradient(1px 1px at 31% 62%, #fff6e5 50%, transparent 52%),
+      radial-gradient(1.5px 1.5px at 47% 9%, #fff6e5 50%, transparent 52%),
+      radial-gradient(1px 1px at 63% 41%, #fff6e5 50%, transparent 52%),
+      radial-gradient(2px 2px at 78% 73%, #fff6e5 50%, transparent 52%),
+      radial-gradient(1px 1px at 91% 14%, #fff6e5 50%, transparent 52%),
+      radial-gradient(1.5px 1.5px at 8% 81%, #fff6e5 50%, transparent 52%),
+      radial-gradient(1px 1px at 24% 37%, #fff6e5 50%, transparent 52%),
+      radial-gradient(1px 1px at 56% 78%, #fff6e5 50%, transparent 52%),
+      radial-gradient(1.5px 1.5px at 86% 52%, #fff6e5 50%, transparent 52%),
+      radial-gradient(1px 1px at 70% 6%, #fff6e5 50%, transparent 52%),
+      radial-gradient(1px 1px at 40% 92%, #fff6e5 50%, transparent 52%);
+    opacity: 0.45;
+    animation: stars-twinkle 5s ease-in-out infinite alternate;
+  }
+
+  /* Keep the page edge the right colour when the envelope theme is showing. */
+  body:has(.theme-envelope) {
+    background: #f4f2ee;
+  }
+  body:has(.theme-envelope)::before,
+  body:has(.theme-envelope)::after {
+    content: none;
+  }
+
+  .theme-box,
+  .theme-envelope {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--body-font);
+  }
+
+  /* The dark theme lets the page background and its light show through. */
+  .theme-box {
+    background: transparent;
+  }
+  .theme-envelope {
+    background: radial-gradient(120% 70% at 50% 0%, #fcfbf8, #f4f2ee 70%);
+  }
+
+  h1,
+  h2 {
+    font-family: var(--heading-font);
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+    text-wrap: balance;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* ------------------------------------------------------------ Components */
+
+@layer components {
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-block-size: 48px;
+    padding-inline: 24px;
+    padding-block: 10px;
+    border-radius: 999px;
+    border: 1.5px solid transparent;
+    font-weight: 700;
+    font-size: 1rem;
+    text-align: center;
+    cursor: pointer;
+    transition:
+      transform 0.15s ease,
+      opacity 0.15s ease;
+  }
+  .btn:active {
+    transform: scale(0.97);
+  }
+  .btn:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+  .btn-primary {
+    background: var(--btn-bg);
+    color: var(--accent-ink);
+    box-shadow: var(--btn-shadow);
+  }
+  .btn-secondary {
+    border-color: var(--border);
+    color: var(--text);
+  }
+
+  .input {
+    display: block;
+    inline-size: 100%;
+    min-block-size: 48px;
+    padding-inline: 14px;
+    padding-block: 10px;
+    border-radius: 12px;
+    border: 1.5px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 1rem;
+  }
+  .input::placeholder {
+    color: var(--muted);
+    opacity: 0.7;
+  }
+  .input[aria-invalid="true"] {
+    border-color: var(--danger);
+  }
+
+  .panel {
+    border: 1px solid var(--panel-border);
+    background: var(--panel-bg);
+    box-shadow: var(--panel-shadow);
+    border-radius: 20px;
+    padding: 18px;
+  }
+  @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .panel {
+      -webkit-backdrop-filter: var(--panel-blur);
+      backdrop-filter: var(--panel-blur);
+    }
+  }
+
+  .fade-in {
+    animation: fade-in 0.6s ease both;
+  }
+}
+
+@keyframes aurora-drift {
+  to {
+    transform: translate3d(4%, -3%, 0) rotate(5deg) scale(1.1);
+  }
+}
+@keyframes stars-twinkle {
+  to {
+    opacity: 0.75;
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+/* -------------------------------------------------------------- Gift box */
+
+.giftbox {
+  position: relative;
+  display: block;
+  inline-size: 240px;
+  block-size: 270px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.giftbox:not(.is-open):not(.is-static) {
+  animation: giftbox-float 3.4s ease-in-out infinite;
+}
+.giftbox.is-static {
+  cursor: default;
+}
+
+.giftbox-inner {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 100%;
+}
+.giftbox:not(.is-open):not(.is-static) .giftbox-inner {
+  animation: giftbox-wobble 3.4s ease-in-out infinite;
+}
+
+.giftbox-glow {
+  position: absolute;
+  inset: -50px -60px -30px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgb(247 179 43 / 0.34), rgb(255 93 143 / 0.12) 55%, transparent);
+  animation: giftbox-breathe 3.4s ease-in-out infinite;
+}
+
+.giftbox-shadow {
+  position: absolute;
+  inset-inline: 26px;
+  inset-block-end: -16px;
+  block-size: 30px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgb(0 0 0 / 0.5), transparent);
+}
+
+/* Rays that flash out from the seam when the lid comes off. */
+.giftbox-burst {
+  position: absolute;
+  inset-inline-start: 50%;
+  inset-block-start: 118px;
+  inline-size: 460px;
+  block-size: 460px;
+  margin-inline-start: -230px;
+  margin-block-start: -230px;
+  border-radius: 50%;
+  background: repeating-conic-gradient(rgb(255 226 150 / 0.55) 0deg 7deg, transparent 7deg 20deg);
+  -webkit-mask-image: radial-gradient(closest-side, #000 12%, transparent 72%);
+  mask-image: radial-gradient(closest-side, #000 12%, transparent 72%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Warm light pouring up out of the open box. */
+.giftbox-light {
+  position: absolute;
+  inset-inline: 30px;
+  inset-block-end: 132px;
+  block-size: 230px;
+  background: linear-gradient(to top, rgb(255 226 150 / 0.8), rgb(255 226 150 / 0));
+  clip-path: polygon(22% 100%, 78% 100%, 100% 0, 0 0);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.giftbox-body {
+  position: absolute;
+  inset-inline: 24px;
+  inset-block-end: 0;
+  block-size: 142px;
+  border-radius: 6px 6px 16px 16px;
+  background:
+    linear-gradient(90deg, rgb(255 255 255 / 0.16), transparent 28%, transparent 68%, rgb(0 0 0 / 0.22)),
+    linear-gradient(rgb(0 0 0 / 0.28), transparent 26%),
+    linear-gradient(165deg, #ff7fa8, #ff5d8f 45%, #dc3c76);
+  box-shadow:
+    inset 0 -10px 18px rgb(120 20 70 / 0.35),
+    0 10px 24px rgb(0 0 0 / 0.3);
+  overflow: hidden;
+}
+/* The ribbon running down the front. */
+.giftbox-body::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 50%;
+  inline-size: 38px;
+  margin-inline-start: -19px;
+  background:
+    linear-gradient(rgb(0 0 0 / 0.25), transparent 26%),
+    linear-gradient(90deg, #c98410, #ffd66e 32%, #f7b32b 62%, #c98410);
+}
+
+.giftbox-lid {
+  position: absolute;
+  inset-inline: 8px;
+  inset-block-start: 76px;
+  block-size: 52px;
+  z-index: 2;
+}
+.giftbox-lid-front {
+  position: absolute;
+  inset: 0;
+  border-radius: 4px 4px 10px 10px;
+  background:
+    linear-gradient(90deg, rgb(255 255 255 / 0.2), transparent 28%, transparent 68%, rgb(0 0 0 / 0.2)),
+    linear-gradient(165deg, #ff9bbb, #ff6f9c 50%, #e84a82);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.45),
+    0 8px 12px -4px rgb(0 0 0 / 0.4);
+  overflow: hidden;
+}
+.giftbox-lid-front::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 50%;
+  inline-size: 40px;
+  margin-inline-start: -20px;
+  background: linear-gradient(90deg, #c98410, #ffd66e 32%, #f7b32b 62%, #c98410);
+}
+/* The top face of the lid, which is what gives the box its depth. */
+.giftbox-lid-top {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: calc(100% - 1px);
+  block-size: 16px;
+  clip-path: polygon(7% 0, 93% 0, 100% 100%, 0 100%);
+  background:
+    linear-gradient(90deg, transparent 42%, #ffe08a 42% 58%, transparent 58%),
+    linear-gradient(#ffc4d6, #ffa4c0);
+}
+
+.giftbox-bow {
+  position: absolute;
+  inset-inline-start: 50%;
+  inset-block-end: calc(100% + 6px);
+  inline-size: 0;
+  block-size: 0;
+}
+.giftbox-bow i {
+  position: absolute;
+  inset-block-end: 0;
+  inline-size: 62px;
+  block-size: 46px;
+  border: 12px solid #f7b32b;
+  box-shadow:
+    inset 0 -4px 0 rgb(160 100 0 / 0.35),
+    inset 0 3px 0 rgb(255 240 190 / 0.6),
+    0 4px 8px rgb(0 0 0 / 0.25);
+}
+.giftbox-bow i:nth-child(1) {
+  inset-inline-end: 0;
+  border-radius: 60% 60% 12% 60%;
+  transform-origin: bottom right;
+  transform: rotate(-14deg);
+}
+.giftbox-bow i:nth-child(2) {
+  inset-inline-start: 0;
+  border-radius: 60% 60% 60% 12%;
+  transform-origin: bottom left;
+  transform: rotate(14deg);
+}
+.giftbox-bow b {
+  position: absolute;
+  inset-block-end: -6px;
+  inset-inline-start: -13px;
+  inline-size: 26px;
+  block-size: 22px;
+  border-radius: 8px;
+  background: linear-gradient(160deg, #ffe08a, #f7b32b 55%, #c98410);
+  box-shadow: 0 2px 4px rgb(0 0 0 / 0.3);
+}
+
+/* The opening sequence: squash and shake, lid pops and falls, light pours out. */
+.giftbox.is-open .giftbox-inner {
+  animation: giftbox-shake 0.42s ease-in-out;
+}
+.giftbox.is-open .giftbox-lid {
+  animation: giftbox-lid-off 1.25s 0.4s forwards;
+}
+.giftbox.is-open .giftbox-body {
+  animation: giftbox-pop 0.5s 0.4s ease;
+}
+.giftbox.is-open .giftbox-burst {
+  animation: giftbox-burst 1.3s 0.42s ease-out forwards;
+}
+.giftbox.is-open .giftbox-light {
+  animation: giftbox-light 0.5s 0.5s ease-out forwards;
+}
+.giftbox.is-open .giftbox-glow {
+  animation: giftbox-flash 1.5s 0.4s ease forwards;
+}
+
+@keyframes giftbox-float {
+  50% {
+    transform: translateY(-8px);
+  }
+}
+@keyframes giftbox-breathe {
+  50% {
+    transform: scale(1.08);
+    opacity: 0.8;
+  }
+}
+@keyframes giftbox-wobble {
+  0%,
+  72%,
+  100% {
+    transform: rotate(0);
+  }
+  78% {
+    transform: rotate(-4deg);
+  }
+  84% {
+    transform: rotate(4deg);
+  }
+  90% {
+    transform: rotate(-3deg);
+  }
+  95% {
+    transform: rotate(2deg);
+  }
+}
+@keyframes giftbox-shake {
+  0% {
+    transform: scale(1);
+  }
+  18% {
+    transform: scale(1.08, 0.9);
+  }
+  36% {
+    transform: scale(0.97, 1.04) rotate(-6deg);
+  }
+  54% {
+    transform: rotate(6deg);
+  }
+  72% {
+    transform: rotate(-4deg);
+  }
+  88% {
+    transform: rotate(3deg);
+  }
+  100% {
+    transform: rotate(0);
+  }
+}
+@keyframes giftbox-lid-off {
+  0% {
+    transform: translate(0, 0) rotate(0);
+    animation-timing-function: cubic-bezier(0.15, 0.85, 0.3, 1);
+  }
+  30% {
+    transform: translate(-14px, -170px) rotate(-16deg);
+    animation-timing-function: ease-in-out;
+  }
+  46% {
+    transform: translate(24px, -196px) rotate(8deg);
+    opacity: 1;
+    /* From the top of the arc it falls like something with weight. */
+    animation-timing-function: cubic-bezier(0.55, 0, 0.95, 0.55);
+  }
+  100% {
+    transform: translate(210px, 640px) rotate(150deg);
+    opacity: 0;
+  }
+}
+@keyframes giftbox-pop {
+  35% {
+    transform: scale(1.07, 0.93);
+  }
+  65% {
+    transform: scale(0.97, 1.04);
+  }
+}
+@keyframes giftbox-burst {
+  0% {
+    opacity: 0;
+    transform: scale(0.2) rotate(0);
+  }
+  25% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.25) rotate(50deg);
+  }
+}
+@keyframes giftbox-light {
+  to {
+    opacity: 1;
+  }
+}
+@keyframes giftbox-flash {
+  30% {
+    transform: scale(1.6);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.9);
+    opacity: 0.55;
+  }
+}
+
+/* Confetti is drawn on one canvas that covers the screen. */
+.confetti-canvas {
+  position: fixed;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  pointer-events: none;
+  z-index: 50;
+}
+
+/* ------------------------------------------------------ Reveal and hints */
+
+.rise {
+  animation: rise 0.75s cubic-bezier(0.2, 1.25, 0.35, 1) both;
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(70px) scale(0.92);
+  }
+}
+/* A blurred card is costly to move, so cards that animate in use a solid fill. */
+.rise.panel,
+.rise > .panel {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: var(--panel-solid);
+}
+
+.tap-hint {
+  animation: tap-hint 1.8s ease-in-out infinite;
+}
+@keyframes tap-hint {
+  50% {
+    opacity: 0.55;
+    transform: translateY(3px);
+  }
+}
+
+.digit-in {
+  display: inline-block;
+  animation: digit-in 0.35s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+@keyframes digit-in {
+  from {
+    opacity: 0;
+    transform: translateY(-45%);
+  }
+}
+
+/* -------------------------------------------------------------- Envelope */
+
+.envelope {
+  position: relative;
+  inline-size: 290px;
+  block-size: 186px;
+  margin-block-start: 130px;
+  perspective: 900px;
+  filter: drop-shadow(0 22px 28px rgb(22 22 26 / 0.16));
+}
+
+.envelope-back,
+.envelope-front,
+.envelope-flap {
+  position: absolute;
+  inset: 0;
+  border-radius: 10px;
+}
+.envelope-back {
+  background: linear-gradient(#e9e5dc, #d8d3c8);
+}
+
+.envelope-card {
+  position: absolute;
+  inset-inline: 14px;
+  inset-block: 10px;
+  z-index: 2;
+  display: flex;
+  justify-content: center;
+  padding-block-start: 26px;
+  border-radius: 8px;
+  border: 1px solid #e6e2d9;
+  background: linear-gradient(#ffffff, #faf8f4);
+  box-shadow: 0 6px 16px rgb(22 22 26 / 0.1);
+  color: #16161a;
+  font-weight: 800;
+  font-size: 1.15rem;
+  text-align: center;
+  transition: transform 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) 0.55s;
+}
+
+.envelope-front {
+  z-index: 3;
+  background:
+    linear-gradient(118deg, rgb(22 22 26 / 0.06), transparent 46%),
+    linear-gradient(242deg, rgb(22 22 26 / 0.06), transparent 46%),
+    linear-gradient(#ffffff, #f2efe9);
+  clip-path: polygon(0 0, 50% 58%, 100% 0, 100% 100%, 0 100%);
+}
+
+.envelope-flap {
+  z-index: 4;
+  background: linear-gradient(#f6f3ed, #e2ddd2);
+  clip-path: polygon(0 0, 100% 0, 50% 62%);
+  transform-origin: top;
+  transition:
+    transform 0.6s ease,
+    z-index 0s linear 0.3s;
+}
+
+.envelope-seal {
+  position: absolute;
+  inset-inline-start: 50%;
+  inset-block-start: 60%;
+  z-index: 5;
+  inline-size: 60px;
+  block-size: 60px;
+  margin-inline-start: -30px;
+  margin-block-start: -30px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 34% 28%, #6b82ff, #2d4bff 52%, #1a2db0);
+  color: var(--accent-ink);
+  box-shadow:
+    inset 0 0 0 3px rgb(255 255 255 / 0.16),
+    inset 0 -4px 7px rgb(0 0 0 / 0.28),
+    0 0 0 5px rgb(45 75 255 / 0.18),
+    0 4px 10px rgb(22 22 26 / 0.25);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition:
+    transform 0.3s ease,
+    opacity 0.3s ease;
+  animation: seal-pulse 2.2s ease-in-out infinite;
+  -webkit-tap-highlight-color: transparent;
+}
+.envelope-seal svg {
+  inline-size: 26px;
+  block-size: 26px;
+}
+
+.envelope.is-open .envelope-flap {
+  transform: rotateX(180deg);
+  z-index: 1;
+}
+.envelope.is-open .envelope-card {
+  transform: translateY(-118px);
+  transition-delay: 0.85s;
+}
+.envelope.is-open .envelope-seal {
+  animation: seal-break 0.55s ease-in forwards;
+  pointer-events: none;
+}
+.envelope.is-open .envelope-flap {
+  transition-delay: 0.3s, 0.6s;
+}
+
+@keyframes seal-pulse {
+  50% {
+    box-shadow:
+      inset 0 0 0 3px rgb(255 255 255 / 0.16),
+      inset 0 -4px 7px rgb(0 0 0 / 0.28),
+      0 0 0 11px rgb(45 75 255 / 0.1),
+      0 4px 10px rgb(22 22 26 / 0.25);
+  }
+}
+@keyframes seal-break {
+  30% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(70px) rotate(28deg) scale(0.6);
+    opacity: 0;
+  }
+}
+
+/* -------------------------------------------------------- Reduced motion */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+  }
+  .confetti-canvas {
+    display: none;
+  }
 }
