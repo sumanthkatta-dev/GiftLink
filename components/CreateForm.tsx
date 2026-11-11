@@ -9,6 +9,7 @@ import {
 } from "@/app/actions";
 import { CopyLink } from "@/components/CopyLink";
 import { IconCheck, IconLock } from "@/components/icons";
+import { UnlockPicker } from "@/components/UnlockPicker";
 import { Wrap } from "@/components/wraps/Wrap";
 import { LIMITS } from "@/lib/limits";
 import { m } from "@/lib/messages";
@@ -78,7 +79,7 @@ function Group({ id, title, hint, children, i }: { id: string; title: string; hi
 }
 
 export function CreateForm() {
-  // `unlockAt` holds the raw datetime-local value here; it becomes UTC on submit.
+  // `unlockAt` holds a local "YYYY-MM-DDTHH:mm" value from UnlockPicker; it becomes UTC on submit.
   const [values, setValues] = useState<CreateGiftInput>(EMPTY);
   const [errors, setErrors] = useState<CreateErrors>({});
   const [result, setResult] = useState<{ id: string; key: string } | null>(null);
@@ -317,9 +318,11 @@ export function CreateForm() {
           </section>
 
           <Group id="g-extras" title={m.create.sectionExtras} hint={m.create.extrasHint} i={3}>
-            <Field name="unlockAt" label={m.create.unlockAt} optional hint={m.create.unlockHint} error={errorFor("unlockAt")}>
-              <input {...inputProps("unlockAt")} type="datetime-local" onChange={(event) => set("unlockAt", event.target.value)} />
-            </Field>
+            <UnlockPicker
+              errorId="unlockAt-error"
+              error={errorFor("unlockAt")}
+              onChange={(value) => set("unlockAt", value)}
+            />
             <Field
               name="secretQuestion"
               label={m.create.secretQuestion}

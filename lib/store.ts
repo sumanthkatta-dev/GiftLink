@@ -1,14 +1,16 @@
 /**
  * The only file that touches gift storage.
  *
- * v1 keeps gifts in a local JSON file (data/gifts.json). To move to
- * Firestore, write another object that satisfies `GiftStore` and export
- * its methods at the bottom of this file. Nothing else needs to change.
+ * Gifts live in Cloud Firestore when the Firebase env vars are set
+ * (see lib/firestore-store.ts), and in a local JSON file (data/gifts.json)
+ * otherwise, which is handy for local development.
  */
+import "server-only";
 import { randomBytes } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { normalizeWrap, type WrapStyle } from "@/lib/wraps";
+import { firestoreConfigured, firestoreStore } from "@/lib/firestore-store";
 
 export type { WrapStyle };
 
@@ -119,7 +121,20 @@ const fileStore: GiftStore = {
   },
 };
 
-const store: GiftStore = fileStore;
+// ---------------------------------------------------------------------------
+// Which store is used
+// ---------------------------------------------------------------------------
+
+// Firestore when its env vars are set (production), the local file otherwise (development).
+// On Vercel the disk is read-only, so the file store can only fail there: say why in the logs.
+if (!firestoreConfigured() && process.env.VERCEL) {
+  console.error(
+    "GiftLink: FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL and FIREBASE_PRIVATE_KEY are not set. " +
+      "Gifts cannot be saved on Vercel without them.",
+  );
+}
+
+const store: GiftStore = firestoreConfigured() ? firestoreStore : fileStore;
 
 export const createGift = store.createGift;
 export const getGift = store.getGift;
