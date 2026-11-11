@@ -1,11 +1,14 @@
 import { ImageResponse } from "next/og";
 import { m } from "@/lib/messages";
+import { tokens } from "@/lib/tokens";
 
 export const alt = m.meta.giftImageAlt;
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
-// The same picture for every gift: it shows a wrapped box and nothing about the contents.
+const foil = `linear-gradient(135deg, ${tokens.goldDark}, ${tokens.goldLight} 30%, ${tokens.gold} 50%, ${tokens.goldLight} 70%, ${tokens.goldDark})`;
+
+// The same picture for every gift: a closed ivory card, and nothing about what's inside.
 export default function Image() {
   return new ImageResponse(
     (
@@ -16,33 +19,33 @@ export default function Image() {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: "#1A1433",
+          background: tokens.canvas,
         }}
       >
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "center",
-              width: 380,
-              height: 84,
-              borderRadius: 16,
-              background: "#FF7DA5",
-            }}
-          >
-            <div style={{ width: 64, height: 84, background: "#F7B32B" }} />
-          </div>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "center",
-              width: 330,
-              height: 230,
-              borderRadius: "0 0 22px 22px",
-              background: "#FF5D8F",
-            }}
-          >
-            <div style={{ width: 64, height: 230, background: "#F7B32B" }} />
+        <div
+          style={{
+            display: "flex",
+            width: 330,
+            height: 462,
+            padding: 22,
+            borderRadius: 12,
+            background: tokens.ivory,
+            transform: "rotate(-4deg)",
+            boxShadow: `0 4px 0 ${tokens.ivoryEdge}, 0 40px 80px rgba(0, 0, 0, 0.55)`,
+          }}
+        >
+          <div style={{ display: "flex", flex: 1, padding: 2, background: foil }}>
+            <div
+              style={{
+                display: "flex",
+                flex: 1,
+                alignItems: "center",
+                justifyContent: "center",
+                background: tokens.ivory,
+              }}
+            >
+              <div style={{ display: "flex", width: 90, height: 2, background: foil }} />
+            </div>
           </div>
         </div>
       </div>

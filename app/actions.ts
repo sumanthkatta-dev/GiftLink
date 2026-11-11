@@ -4,7 +4,8 @@ import { LIMITS } from "@/lib/limits";
 import type { ErrorKey } from "@/lib/messages";
 import { fetchOg } from "@/lib/og";
 import { answerMatches, hashAnswer, newManageKey } from "@/lib/secret";
-import { createGift, getGift, markOpened, type WrapStyle } from "@/lib/store";
+import { createGift, getGift, markOpened } from "@/lib/store";
+import { isWrapStyle } from "@/lib/wraps";
 
 export interface CreateGiftInput {
   url: string;
@@ -65,7 +66,7 @@ export async function createGiftAction(input: CreateGiftInput): Promise<CreateGi
 
   if (note.length > LIMITS.note) errors.note = "tooLong";
 
-  if (wrapStyle !== "box" && wrapStyle !== "envelope") errors.wrapStyle = "wrapInvalid";
+  if (!isWrapStyle(wrapStyle)) errors.wrapStyle = "wrapInvalid";
 
   let unlockAt: string | null = null;
   if (unlockRaw) {
@@ -82,7 +83,7 @@ export async function createGiftAction(input: CreateGiftInput): Promise<CreateGi
     errors.secretAnswer = "tooLong";
   }
 
-  if (!url || Object.keys(errors).length > 0) return { ok: false, errors };
+  if (!url || !isWrapStyle(wrapStyle) || Object.keys(errors).length > 0) return { ok: false, errors };
 
   try {
     const og = await fetchOg(url.toString());
@@ -92,7 +93,7 @@ export async function createGiftAction(input: CreateGiftInput): Promise<CreateGi
       receiverName,
       senderName,
       note,
-      wrapStyle: wrapStyle as WrapStyle,
+      wrapStyle,
       unlockAt,
       secretQuestion: secretQuestion || null,
       secretAnswerHash: secretAnswer ? hashAnswer(secretAnswer) : null,

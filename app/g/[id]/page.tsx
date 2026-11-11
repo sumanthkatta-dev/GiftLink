@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
+import { EmptyState } from "@/components/EmptyState";
 import { GiftExperience } from "@/components/GiftExperience";
+import { IconGift } from "@/components/icons";
 import { m } from "@/lib/messages";
 import { getGift } from "@/lib/store";
 
@@ -28,9 +30,13 @@ async function Gift({ params }: Pick<Props, "params">) {
 
   if (!gift) {
     return (
-      <main className="mx-auto flex min-h-dvh max-w-[430px] flex-col items-center justify-center gap-4 px-5 text-center">
-        <h1 className="text-3xl font-extrabold">{m.gift.notFoundHeading}</h1>
-        <p className="text-muted">{m.gift.notFoundBody}</p>
+      <main className="flex min-h-dvh items-center justify-center px-5 py-16">
+        <EmptyState
+          icon={<IconGift className="size-6" />}
+          heading={m.gift.notFoundHeading}
+          body={m.gift.notFoundBody}
+          action={{ href: "/create", label: m.gift.notFoundCta }}
+        />
       </main>
     );
   }
@@ -38,18 +44,16 @@ async function Gift({ params }: Pick<Props, "params">) {
   // Only what the wrapped screens need is sent to the browser.
   // The URL, note and preview come later, from revealGiftAction.
   return (
-    <div className={gift.wrapStyle === "envelope" ? "theme-envelope" : "theme-box"}>
-      <GiftExperience
-        id={gift.id}
-        senderName={gift.senderName}
-        receiverName={gift.receiverName}
-        wrapStyle={gift.wrapStyle}
-        unlockAt={gift.unlockAt}
-        secretQuestion={gift.secretQuestion}
-        lockedAtRender={gift.unlockAt ? Date.parse(gift.unlockAt) > Date.now() : false}
-        serverNow={Date.now()}
-      />
-    </div>
+    <GiftExperience
+      id={gift.id}
+      senderName={gift.senderName}
+      receiverName={gift.receiverName}
+      wrapStyle={gift.wrapStyle}
+      unlockAt={gift.unlockAt}
+      secretQuestion={gift.secretQuestion}
+      lockedAtRender={gift.unlockAt ? Date.parse(gift.unlockAt) > Date.now() : false}
+      serverNow={Date.now()}
+    />
   );
 }
 

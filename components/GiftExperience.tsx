@@ -1,12 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState, useTransition, type FormEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useTransition, type FormEvent } from "react";
 import { checkAnswerAction, revealGiftAction, type RevealedGift } from "@/app/actions";
-import { GiftBoxArt } from "@/components/GiftBoxArt";
+import { Celebration, haptic, type CelebrationHandle } from "@/components/celebration/Celebration";
+import { scheduleChime } from "@/components/celebration/sound";
+import { IconLock, IconSoundOff, IconSoundOn } from "@/components/icons";
 import { formatLocal } from "@/components/LocalTime";
+import { Wrap } from "@/components/wraps/Wrap";
 import { m } from "@/lib/messages";
-import type { WrapStyle } from "@/lib/store";
+import type { WrapStyle } from "@/lib/wraps";
 
 type Stage = "locked" | "question" | "wrapped" | "opening" | "revealed";
 
@@ -24,15 +27,16 @@ export interface GiftExperienceProps {
   serverNow: number;
 }
 
+/** How long the opening plays before the reveal, in ms. The gift is fetched meanwhile. */
 const OPEN_ANIMATION_MS = 2100;
-/** When the confetti fires, measured from the tap. Matches the lid leaving the box. */
-const CONFETTI_DELAY_MS: Record<WrapStyle, number> = { box: 430, envelope: 900 };
-const CONFETTI: Record<WrapStyle, { colors: string[]; count: number }> = {
-  box: { colors: ["#F7B32B", "#FF5D8F", "#FFF6E5", "#BDB3D9", "#7CE0C3", "#8E7BFF"], count: 130 },
-  envelope: { colors: ["#2D4BFF", "#8FA0FF", "#F7B32B", "#16161A", "#DCD8CF"], count: 70 },
-};
+/** When each wrap's opening peaks and the celebration fires, measured from the tap. */
+const BURST_AT_MS: Record<WrapStyle, number> = { card: 1420, envelope: 1520, ticket: 1600 };
+/** Where on the wrap the light comes from, as a share of its height. */
+const BURST_ORIGIN_Y: Record<WrapStyle, number> = { card: 0.48, envelope: 0.36, ticket: 0.38 };
+const SOUND_KEY = "giftlink:sound";
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const prefersReducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 // ------------------------------------------------------------------ Countdown
 
@@ -66,157 +70,39 @@ function Countdown({ unlockAt, skew, onDone }: { unlockAt: string; skew: number 
   ];
 
   return (
-    <div className="flex flex-col items-center gap-5">
-      <div className="grid w-full grid-cols-4 gap-2" role="timer">
+    <div className="flex w-full flex-col items-center gap-4">
+      <div className="ui-card grid w-full grid-cols-4 divide-x divide-line" role="timer">
         {units.map(([value, label]) => (
-          <div key={label} className="panel flex flex-col items-center gap-1 px-1 py-4">
-            <span className="font-heading text-3xl font-extrabold tabular-nums" aria-hidden={remaining === null}>
+          <div key={label} className="flex flex-col items-center gap-1 py-5">
+            <span className="text-[30px] font-medium leading-none tracking-[-0.03em] tabular-nums" aria-hidden={remaining === null}>
               <span key={remaining === null ? "none" : value} className="digit-in">
                 {remaining === null ? "--" : String(value).padStart(2, "0")}
               </span>
             </span>
-            <span className="text-xs uppercase tracking-widest text-muted">{label}</span>
+            <span className="text-[13px] text-fg-muted">{label}</span>
           </div>
         ))}
       </div>
-      <p className="min-h-6 text-muted">
+      <p className="min-h-6 text-[15px] text-fg-muted">
         {remaining !== null && <time dateTime={unlockAt}>{m.gift.opensAt(formatLocal(unlockAt))}</time>}
       </p>
     </div>
   );
 }
 
-// -------------------------------------------------------------------- Wraps
+// ------------------------------------------------------------------ Sound
 
-function GiftBox({ open, onOpen }: { open: boolean; onOpen: () => void }) {
+function SoundToggle({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }) {
   return (
     <button
       type="button"
-      className={`giftbox ${open ? "is-open" : ""}`}
-      onClick={onOpen}
-      disabled={open}
-      aria-label={m.gift.boxLabel}
+      aria-pressed={on}
+      onClick={() => onChange(!on)}
+      className="ui-button ui-button-sm ui-button-quiet fixed right-3 top-3 z-50 bg-canvas/80"
     >
-      <GiftBoxArt withEffects />
+      {on ? <IconSoundOn className="size-4" /> : <IconSoundOff className="size-4" />}
+      {on ? m.gift.soundOn : m.gift.soundOff}
     </button>
-  );
-}
-
-/**
- * Confetti drawn on one full-screen canvas. Each change of `burst` throws a
- * fresh handful up from the wrap, then lets it fall with gravity and drift.
- */
-function ConfettiCanvas({ burst, wrapStyle }: { burst: number; wrapStyle: WrapStyle }) {
-  const ref = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const canvas = ref.current;
-    if (!burst || !canvas) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    const width = window.innerWidth;
-    const height = window.innerHeight;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-    const wrap = document.querySelector(".giftbox, .envelope")?.getBoundingClientRect();
-    const originX = wrap ? wrap.left + wrap.width / 2 : width / 2;
-    const originY = wrap ? wrap.top + wrap.height * 0.42 : height / 2;
-
-    const { colors, count } = CONFETTI[wrapStyle];
-    const pieces = Array.from({ length: count }, (_, i) => {
-      const angle = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 0.95;
-      const speed = 8 + Math.random() * 13;
-      return {
-        x: originX,
-        y: originY,
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed,
-        size: 6 + Math.random() * 7,
-        rotation: Math.random() * Math.PI,
-        spin: (Math.random() - 0.5) * 0.4,
-        flutter: Math.random() * Math.PI * 2,
-        round: i % 5 === 0,
-        color: colors[i % colors.length],
-      };
-    });
-
-    const LIFE_MS = 3400;
-    const FADE_MS = 900;
-    let frame = 0;
-    let start = 0;
-    let last = 0;
-
-    const draw = (time: number) => {
-      if (!start) start = last = time;
-      const elapsed = time - start;
-      // Steps are scaled to the real frame time, so slow phones get the same motion.
-      const step = Math.min((time - last) / 16.67, 3);
-      last = time;
-      ctx.clearRect(0, 0, width, height);
-      if (elapsed > LIFE_MS) return;
-      ctx.globalAlpha = Math.min(1, (LIFE_MS - elapsed) / FADE_MS);
-
-      const drag = Math.pow(0.985, step);
-      for (const piece of pieces) {
-        piece.vy += 0.42 * step;
-        piece.vx *= drag;
-        piece.vy *= drag;
-        piece.x += piece.vx * step;
-        piece.y += piece.vy * step;
-        piece.rotation += piece.spin * step;
-        piece.flutter += 0.18 * step;
-
-        ctx.save();
-        ctx.translate(piece.x, piece.y);
-        ctx.rotate(piece.rotation);
-        ctx.scale(1, Math.cos(piece.flutter));
-        ctx.fillStyle = piece.color;
-        if (piece.round) {
-          ctx.beginPath();
-          ctx.arc(0, 0, piece.size / 2, 0, Math.PI * 2);
-          ctx.fill();
-        } else {
-          ctx.fillRect(-piece.size / 2, -piece.size * 0.7, piece.size, piece.size * 1.4);
-        }
-        ctx.restore();
-      }
-      frame = requestAnimationFrame(draw);
-    };
-    frame = requestAnimationFrame(draw);
-
-    return () => {
-      cancelAnimationFrame(frame);
-      ctx.clearRect(0, 0, width, height);
-    };
-  }, [burst, wrapStyle]);
-
-  return <canvas ref={ref} className="confetti-canvas" aria-hidden="true" />;
-}
-
-function Envelope({ open, onOpen, receiverName }: { open: boolean; onOpen: () => void; receiverName: string }) {
-  return (
-    <div className={`envelope ${open ? "is-open" : ""}`}>
-      <div className="envelope-back" />
-      <div className="envelope-card">{m.gift.cardFor(receiverName)}</div>
-      <div className="envelope-front" />
-      <div className="envelope-flap" />
-      <button
-        type="button"
-        className="envelope-seal"
-        onClick={onOpen}
-        disabled={open}
-        aria-label={m.gift.sealLabel}
-      >
-        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-          <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
-        </svg>
-      </button>
-    </div>
   );
 }
 
@@ -232,12 +118,53 @@ export function GiftExperience(props: GiftExperienceProps) {
   const [failed, setFailed] = useState(false);
   const [gift, setGift] = useState<RevealedGift | null>(null);
   const [checking, startChecking] = useTransition();
-  const [burst, setBurst] = useState(0);
+  const [sound, setSound] = useState(false);
   // How far the server's clock is ahead of this phone's, in ms. Measured once the page is live.
   const [skew, setSkew] = useState<number | null>(null);
   useEffect(() => {
     setSkew(serverNow - Date.now());
   }, [serverNow]);
+
+  // Sound is off unless this viewer turned it on before.
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(SOUND_KEY) === "on") setSound(true);
+    } catch {
+      // Storage blocked: stay silent.
+    }
+  }, []);
+  function changeSound(on: boolean) {
+    setSound(on);
+    try {
+      localStorage.setItem(SOUND_KEY, on ? "on" : "off");
+    } catch {
+      // Not remembered, but still applies to this visit.
+    }
+  }
+
+  const celebration = useRef<CelebrationHandle>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const topRef = useRef<HTMLDivElement>(null);
+  const burstTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const flipFrom = useRef<number | null>(null);
+  useEffect(() => () => clearTimeout(burstTimer.current), []);
+
+  // When the reveal content arrives below the wrap, the wrap glides up to its new place instead of jumping.
+  useLayoutEffect(() => {
+    const el = topRef.current;
+    const from = flipFrom.current;
+    flipFrom.current = null;
+    if (stage !== "revealed" || !el || from === null || prefersReducedMotion()) return;
+    const dy = from - el.getBoundingClientRect().top;
+    if (Math.abs(dy) < 1) return;
+    const spring = getComputedStyle(document.documentElement).getPropertyValue("--ease-spring").trim();
+    const frames = [{ transform: `translateY(${dy}px)` }, { transform: "translateY(0)" }];
+    try {
+      el.animate(frames, { duration: 900, easing: spring || "ease-out" });
+    } catch {
+      el.animate(frames, { duration: 700, easing: "cubic-bezier(0.22, 1, 0.36, 1)" });
+    }
+  }, [stage]);
 
   function submitAnswer(event: FormEvent) {
     event.preventDefault();
@@ -253,14 +180,22 @@ export function GiftExperience(props: GiftExperienceProps) {
     });
   }
 
+  function celebrate() {
+    const box = wrapRef.current?.getBoundingClientRect();
+    const x = box ? box.left + box.width / 2 : window.innerWidth / 2;
+    const y = box ? box.top + box.height * BURST_ORIGIN_Y[wrapStyle] : window.innerHeight / 2;
+    celebration.current?.fire(x, y);
+  }
+
   async function unwrap() {
     if (stage !== "wrapped") return;
     setFailed(false);
     setStage("opening");
-    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    // A short buzz on phones that support it. Ignored everywhere else.
-    if ("vibrate" in navigator) navigator.vibrate(30);
-    if (!reducedMotion) setTimeout(() => setBurst((n) => n + 1), CONFETTI_DELAY_MS[wrapStyle]);
+    const reducedMotion = prefersReducedMotion();
+    // A short tap on phones that support it. Ignored everywhere else.
+    haptic(12);
+    if (sound) scheduleChime(wrapStyle, reducedMotion ? 0 : BURST_AT_MS[wrapStyle]);
+    if (!reducedMotion) burstTimer.current = setTimeout(celebrate, BURST_AT_MS[wrapStyle]);
     try {
       // The gift's contents are fetched while the animation plays.
       const [result] = await Promise.all([
@@ -268,27 +203,32 @@ export function GiftExperience(props: GiftExperienceProps) {
         wait(reducedMotion ? 400 : OPEN_ANIMATION_MS),
       ]);
       if (result.status === "ok") {
+        flipFrom.current = topRef.current?.getBoundingClientRect().top ?? null;
         setGift(result.gift);
         setStage("revealed");
       } else if (result.status === "locked") {
         // The server says it is too early, so trust its clock and go back to waiting.
+        clearTimeout(burstTimer.current);
         setSkew(result.serverNow - Date.now());
         setStage("locked");
       } else if (result.status === "wrong_answer") {
+        clearTimeout(burstTimer.current);
         setWrongAnswer(true);
         setStage("question");
       } else {
+        clearTimeout(burstTimer.current);
         setFailed(true);
         setStage("wrapped");
       }
     } catch {
+      clearTimeout(burstTimer.current);
       setFailed(true);
       setStage("wrapped");
     }
   }
 
   const errorLine = failed && (
-    <p role="alert" className="font-bold text-danger">
+    <p role="alert" className="text-[15px] font-medium text-danger">
       {m.gift.error}
     </p>
   );
@@ -297,28 +237,33 @@ export function GiftExperience(props: GiftExperienceProps) {
 
   if (stage === "locked" && unlockAt) {
     content = (
-      <section className="fade-in flex w-full flex-col items-center gap-8 text-center">
-        <div className="flex flex-col gap-3">
-          <h1 className="text-4xl font-extrabold">{m.gift.lockedHeading(senderName)}</h1>
-          <p className="text-lg text-muted">{m.gift.lockedBody}</p>
+      <section className="arrive flex w-full flex-col items-center gap-9 text-center">
+        <Wrap kind={wrapStyle} size="small" state="closed" idle note={null} receiverName={receiverName} senderName={senderName} seed={id} />
+        <div className="flex flex-col gap-2">
+          <h1 className="text-[28px] font-semibold leading-tight">{m.gift.lockedHeading(senderName)}</h1>
+          <p className="text-[17px] text-fg-muted">{m.gift.lockedBody}</p>
         </div>
         <Countdown unlockAt={unlockAt} skew={skew} onDone={() => setStage(afterLock)} />
+        <p className="text-[13px] text-fg-muted">{m.gift.lockedHint}</p>
       </section>
     );
   } else if (stage === "question" && secretQuestion) {
     content = (
-      <form onSubmit={submitAnswer} className="fade-in flex w-full flex-col gap-6">
-        <div className="flex flex-col gap-4 text-center">
-          <p className="text-muted">{m.gift.questionHeading(senderName)}</p>
-          <h1 className="text-3xl font-extrabold">{secretQuestion}</h1>
+      <form onSubmit={submitAnswer} className="arrive flex w-full flex-col gap-7">
+        <div className="flex flex-col items-center gap-4 text-center">
+          <span className="grid size-12 place-items-center rounded-full border border-line bg-surface text-fg-muted">
+            <IconLock />
+          </span>
+          <p className="text-[15px] text-fg-muted">{m.gift.questionHeading(senderName)}</p>
+          <h1 className="font-serif text-[32px] leading-[1.15] tracking-normal">{secretQuestion}</h1>
         </div>
         <div className="flex flex-col gap-2">
-          <label htmlFor="answer" className="font-bold">
+          <label htmlFor="answer" className="text-[14px] font-medium">
             {m.gift.answerLabel}
           </label>
           <input
             id="answer"
-            className="input"
+            className="ui-input"
             value={answer}
             autoComplete="off"
             aria-invalid={wrongAnswer || undefined}
@@ -329,101 +274,113 @@ export function GiftExperience(props: GiftExperienceProps) {
             }}
           />
           {wrongAnswer && (
-            <p id="answer-error" role="alert" className="text-sm font-bold text-danger">
+            <p id="answer-error" role="alert" className="text-[14px] font-medium text-danger">
               {m.gift.answerWrong}
             </p>
           )}
         </div>
         {errorLine}
-        <button type="submit" className="btn btn-primary" disabled={checking || !answer.trim()}>
+        <button type="submit" className="ui-button ui-button-primary" disabled={checking || !answer.trim()}>
           {checking ? m.gift.answerChecking : m.gift.answerSubmit}
         </button>
       </form>
     );
-  } else if (stage === "revealed" && gift) {
+  } else {
+    const open = stage === "opening" || stage === "revealed";
     let host = "";
-    try {
-      host = new URL(gift.url).hostname.replace(/^www\./, "");
-    } catch {
-      // Stored URLs are validated on creation, so this should not happen.
+    if (gift) {
+      try {
+        host = new URL(gift.url).hostname.replace(/^www\./, "");
+      } catch {
+        // Stored URLs are validated on creation, so this should not happen.
+      }
     }
     content = (
-      <section className="flex w-full flex-col gap-6">
-        <h1 className="fade-in text-center text-3xl font-extrabold">{m.gift.revealHeading(senderName)}</h1>
-
-        {gift.note && (
-          <figure className="rise panel flex flex-col gap-3">
-            <blockquote className="whitespace-pre-wrap text-lg leading-relaxed">{gift.note}</blockquote>
-            <figcaption className="text-sm font-bold text-muted">{m.gift.noteFrom(senderName)}</figcaption>
-          </figure>
-        )}
-
-        <div className="rise panel overflow-hidden p-0" style={{ animationDelay: "0.14s" }}>
-          {gift.ogImage && (
-            // The image lives on someone else's server, so next/image is not used here.
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={gift.ogImage}
-              alt=""
-              referrerPolicy="no-referrer"
-              className="aspect-[1.91/1] w-full object-cover"
-              onError={(event) => {
-                event.currentTarget.style.display = "none";
-              }}
+      <section className="flex w-full flex-col items-center text-center">
+        <div ref={topRef} className="flex w-full flex-col items-center gap-10">
+          <div className="fade-in flex flex-col gap-2">
+            <h1 className="text-[30px] font-semibold leading-tight">{m.gift.wrappedHeading(receiverName)}</h1>
+            <p className="text-[17px] text-fg-muted">{m.gift.wrappedFrom(senderName)}</p>
+          </div>
+          <div ref={wrapRef} className="arrive" style={{ ["--d" as string]: "80ms" }}>
+            <Wrap
+              kind={wrapStyle}
+              size="full"
+              state={open ? "open" : "closed"}
+              play
+              idle
+              note={gift ? gift.note || m.gift.revealHeading(senderName) : null}
+              noteArrives
+              receiverName={receiverName}
+              senderName={senderName}
+              seed={id}
+              onOpen={unwrap}
+              openLabel={m.gift.openLabel[wrapStyle]}
             />
-          )}
-          <div className="flex flex-col gap-1 p-4">
-            <p className="line-clamp-2 font-bold">{gift.ogTitle || host}</p>
-            <p className="text-sm text-muted">{host}</p>
           </div>
         </div>
 
-        <a
-          href={gift.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="rise btn btn-primary text-lg"
-          style={{ animationDelay: "0.28s" }}
-        >
-          {m.gift.open}
-        </a>
+        {stage === "revealed" && gift ? (
+          <div className="gift-tail mt-12 flex w-full flex-col gap-3 text-left" data-wrap={wrapStyle}>
+            <div className="arrive ui-card overflow-hidden" style={{ ["--d" as string]: "140ms" }}>
+              {gift.ogImage && (
+                // The image lives on someone else's server, so next/image is not used here.
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={gift.ogImage}
+                  alt=""
+                  referrerPolicy="no-referrer"
+                  className="aspect-[1.91/1] w-full border-b border-line object-cover"
+                  onError={(event) => {
+                    event.currentTarget.style.display = "none";
+                  }}
+                />
+              )}
+              <div className="flex flex-col gap-1 p-4">
+                <p className="sr-only">{m.gift.previewLabel}</p>
+                <p className="line-clamp-2 text-[16px] font-medium">{gift.ogTitle || host}</p>
+                <p className="text-[14px] text-fg-muted">{host}</p>
+              </div>
+            </div>
 
-        <div
-          className="fade-in mt-6 flex flex-col items-center gap-4 border-t border-line pt-8"
-          style={{ animationDelay: "0.6s" }}
-        >
-          <Link href="/create" className="btn btn-secondary w-full">
-            {m.gift.makeOne}
-          </Link>
-          <p className="text-sm text-muted">{m.gift.wrappedWith}</p>
-        </div>
-      </section>
-    );
-  } else {
-    const open = stage === "opening";
-    content = (
-      <section className="flex w-full flex-col items-center gap-10 text-center">
-        <div className="flex flex-col gap-3">
-          <h1 className="text-4xl font-extrabold">{m.gift.wrappedHeading(receiverName)}</h1>
-          <p className="text-lg text-muted">{m.gift.wrappedFrom(senderName)}</p>
-        </div>
-        {wrapStyle === "envelope" ? (
-          <Envelope open={open} onOpen={unwrap} receiverName={receiverName} />
+            <a
+              href={gift.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="arrive ui-button ui-button-primary w-full"
+              style={{ ["--d" as string]: "280ms" }}
+            >
+              {m.gift.open}
+            </a>
+
+            <div className="arrive mt-8 flex flex-col items-center gap-2 border-t border-line pt-8" style={{ ["--d" as string]: "420ms" }}>
+              <Link href="/create" className="ui-button ui-button-secondary w-full">
+                {m.gift.makeOne}
+              </Link>
+              <p className="pt-2 text-[13px] text-fg-muted">{m.gift.wrappedWith}</p>
+            </div>
+          </div>
         ) : (
-          <GiftBox open={open} onOpen={unwrap} />
+          <div className="mt-12 flex min-h-14 flex-col items-center gap-3">
+            <p
+              className={`text-[15px] text-fg-muted transition-opacity duration-300 ${open ? "opacity-0" : "hint-breathe"}`}
+            >
+              {m.gift.tap[wrapStyle]}
+            </p>
+            {errorLine}
+          </div>
         )}
-        <p className="tap-hint min-h-6 font-bold text-accent" style={{ visibility: open ? "hidden" : "visible" }}>
-          {wrapStyle === "envelope" ? m.gift.tapSeal : m.gift.tapBox}
-        </p>
-        {errorLine}
       </section>
     );
   }
 
+  const showSound = stage === "wrapped" || stage === "opening" || stage === "revealed";
+
   return (
-    <main className="mx-auto flex min-h-dvh max-w-[430px] flex-col items-center justify-center overflow-x-clip px-5 py-10">
+    <main className="stage-light mx-auto flex min-h-dvh w-full max-w-[440px] flex-col items-center justify-center overflow-x-clip px-5 pb-12 pt-16">
+      {showSound && <SoundToggle on={sound} onChange={changeSound} />}
       {content}
-      <ConfettiCanvas burst={burst} wrapStyle={wrapStyle} />
+      <Celebration kind={wrapStyle} ref={celebration} />
     </main>
   );
 }

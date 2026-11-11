@@ -1,6 +1,7 @@
 "use client";
 
-import { useId, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
+import { IconCheck, IconCopy } from "@/components/icons";
 import { m } from "@/lib/messages";
 import { useHotkey } from "./useHotkey";
 
@@ -18,6 +19,7 @@ export function ShareRow({ path }: { path: string }) {
     () => "",
   );
   const url = origin + path;
+  useEffect(() => () => clearTimeout(timer.current), []);
 
   async function copy() {
     try {
@@ -38,17 +40,17 @@ export function ShareRow({ path }: { path: string }) {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <label htmlFor={id} className="text-[13px] font-medium text-fg">
+        <label htmlFor={id} className="text-[14px] font-medium text-fg">
           {m.manage.shareLabel}
         </label>
-        <span className="hidden items-center gap-1.5 text-[12px] text-fg-3 sm:flex">
-          <kbd className="rounded border border-edge-2 px-1 font-mono text-[10px] leading-4">C</kbd>
+        <span className="hidden items-center gap-1.5 text-[12px] text-fg-muted sm:flex">
+          <kbd className="rounded border border-line-strong px-1.5 font-sans text-[11px] leading-5">C</kbd>
           {m.manage.copyShortcut}
         </span>
       </div>
       <div
-        className={`flex h-11 items-center rounded-xl border bg-canvas pl-3.5 pr-1.5 transition-colors duration-300 ${
-          copied ? "border-brand/60" : "border-edge focus-within:border-edge-2"
+        className={`flex min-h-12 items-center gap-2 rounded-control border bg-canvas py-1.5 pl-3.5 pr-1.5 transition-colors duration-300 ${
+          copied ? "border-accent/60" : "border-line focus-within:border-line-strong"
         }`}
       >
         <input
@@ -58,29 +60,18 @@ export function ShareRow({ path }: { path: string }) {
           value={url}
           aria-describedby={`${id}-hint`}
           onFocus={(event) => event.currentTarget.select()}
-          className="min-w-0 flex-1 bg-transparent font-mono text-[12.5px] text-fg-2 outline-none selection:bg-brand/40"
+          className="min-w-0 flex-1 bg-transparent font-mono text-[13px] text-fg-muted outline-none"
         />
         <button
           type="button"
           onClick={copy}
-          className={`relative inline-flex h-8 shrink-0 items-center gap-1.5 overflow-hidden rounded-lg px-3 text-[13px] font-medium transition-all duration-300 active:scale-95 ${
-            copied ? "bg-brand text-white" : "bg-fg text-canvas hover:bg-white"
-          }`}
+          className={`ui-button ui-button-sm shrink-0 ${copied ? "ui-button-primary" : "ui-button-secondary"}`}
         >
-          {copied ? (
-            <svg key="ok" aria-hidden="true" className="dash-pop size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M5 12.5l4.5 4.5L19 7.5" />
-            </svg>
-          ) : (
-            <svg key="copy" aria-hidden="true" className="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="9" y="9" width="11" height="11" rx="2.5" />
-              <path d="M5 15V6a2 2 0 0 1 2-2h8" />
-            </svg>
-          )}
+          {copied ? <IconCheck key="ok" className="pop-in size-4" /> : <IconCopy key="copy" className="size-4" />}
           <span aria-live="polite">{copied ? m.copy.copied : m.copy.copy}</span>
         </button>
       </div>
-      <p id={`${id}-hint`} className="text-[12px] text-fg-3">
+      <p id={`${id}-hint`} className="text-[13px] text-fg-muted">
         {m.manage.shareHint}
       </p>
     </div>

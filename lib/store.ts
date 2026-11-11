@@ -8,8 +8,9 @@
 import { randomBytes } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { normalizeWrap, type WrapStyle } from "@/lib/wraps";
 
-export type WrapStyle = "box" | "envelope";
+export type { WrapStyle };
 
 export interface Gift {
   id: string;
@@ -50,6 +51,11 @@ const DATA_FILE = path.join(process.cwd(), "data", "gifts.json");
 const ID_PATTERN = /^[A-Za-z0-9_-]{6,32}$/;
 
 type GiftMap = Record<string, Gift>;
+
+/** Older gifts may hold a retired wrap name. Reads map it to a current one; the file is not rewritten. */
+function withCurrentWrap(gift: Gift): Gift {
+  return { ...gift, wrapStyle: normalizeWrap(gift.wrapStyle) };
+}
 
 async function readAll(): Promise<GiftMap> {
   try {
@@ -95,7 +101,7 @@ const fileStore: GiftStore = {
     if (!ID_PATTERN.test(id)) return null;
     await queue;
     const gifts = await readAll();
-    return Object.hasOwn(gifts, id) ? gifts[id] : null;
+    return Object.hasOwn(gifts, id) ? withCurrentWrap(gifts[id]) : null;
   },
 
   markOpened(id) {
@@ -108,7 +114,7 @@ const fileStore: GiftStore = {
         gift.openedAt = new Date().toISOString();
         await writeAll(gifts);
       }
-      return gift;
+      return withCurrentWrap(gift);
     });
   },
 };

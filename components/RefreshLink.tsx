@@ -1,5 +1,6 @@
 "use client";
 
+import { IconRefresh } from "@/components/icons";
 import { m } from "@/lib/messages";
 import { useHotkey } from "./useHotkey";
 
@@ -8,24 +9,10 @@ export function RefreshLink({ href }: { href: string }) {
   useHotkey("r", () => window.location.assign(href));
 
   return (
-    <a
-      href={href}
-      className="group inline-flex h-8 items-center gap-2 rounded-lg border border-edge bg-raised px-3 text-[13px] text-fg-2 transition-colors hover:border-edge-2 hover:text-fg"
-    >
-      <svg
-        aria-hidden="true"
-        className="size-3.5 transition-transform duration-500 ease-out-expo group-hover:rotate-180"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v4.5h-4.5" />
-      </svg>
+    <a href={href} className="group ui-button ui-button-sm ui-button-secondary">
+      <IconRefresh className="size-4 transition-transform duration-500 ease-out group-hover:rotate-180" />
       {m.manage.refresh}
-      <kbd className="ml-0.5 hidden rounded border border-edge-2 px-1 font-mono text-[10px] leading-4 text-fg-3 sm:inline">R</kbd>
+      <kbd className="ml-0.5 hidden rounded border border-line-strong px-1.5 font-sans text-[11px] leading-5 text-fg-muted sm:inline">R</kbd>
     </a>
   );
 }
