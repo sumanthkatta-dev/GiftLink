@@ -6,7 +6,7 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
 import { cert, getApps, initializeApp, type App } from "firebase-admin/app";
-import { initializeFirestore, type DocumentData, type Firestore } from "firebase-admin/firestore";
+import { FieldValue, initializeFirestore, type DocumentData, type Firestore } from "firebase-admin/firestore";
 import type { Gift, GiftStore } from "@/lib/store";
 import { normalizeWrap } from "@/lib/wraps";
 
@@ -35,7 +35,7 @@ function privateKey(): string {
 
 let db: Firestore | null = null;
 
-function firestore(): Firestore {
+export function firestore(): Firestore {
   if (db) return db;
   const app: App =
     getApps().find((existing) => existing.name === APP_NAME) ??
@@ -56,6 +56,7 @@ function firestore(): Firestore {
 }
 
 const gifts = () => firestore().collection("gifts");
+const reports = () => firestore().collection("reports");
 
 /** Older gifts may hold a retired wrap name; map it to a current one. */
 function toGift(data: DocumentData): Gift {
@@ -101,6 +102,21 @@ export const firestoreStore: GiftStore = {
         tx.update(ref, { openedAt: gift.openedAt });
       }
       return gift;
+    });
+  },
+
+  async addReport(report) {
+    if (!ID_PATTERN.test(report.giftId)) return "not_found";
+    const giftRef = gifts().doc(report.giftId);
+    // One document per reporter per gift, so reporting twice changes nothing.
+    const reportRef = reports().doc(`${report.giftId}_${report.reporter}`);
+    return firestore().runTransaction(async (tx) => {
+      const [giftSnap, reportSnap] = await Promise.all([tx.get(giftRef), tx.get(reportRef)]);
+      if (!giftSnap.exists) return "not_found" as const;
+      if (reportSnap.exists) return "duplicate" as const;
+      tx.create(reportRef, report);
+      tx.update(giftRef, { reportCount: FieldValue.increment(1) });
+      return "added" as const;
     });
   },
 };

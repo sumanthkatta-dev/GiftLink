@@ -1,70 +1,84 @@
 /**
  * Fetches a page's og:title and og:image on the server.
  * Never throws: a page that cannot be read just has no preview.
+ *
+ * The URL comes from a stranger, so the fetch is fenced in:
+ * - https on the standard port only, no user:password in the address
+ * - every hostname is resolved first and refused if any address is private,
+ *   loopback, link-local or a cloud metadata service (lib/network.ts)
+ * - the connection itself uses a lookup that applies the same check, so a
+ *   hostname can't pass the check and then resolve somewhere else (DNS rebinding)
+ * - redirects are followed by hand, at most 3, each one checked again
+ * - 5 seconds in total, at most 512 KB read, and only text/html is parsed
  */
-import { lookup } from "node:dns/promises";
-import { BlockList, isIP } from "node:net";
+import { lookup as dnsLookup, type LookupAddress } from "node:dns";
+import type { IncomingMessage } from "node:http";
+import https from "node:https";
+import type { LookupFunction } from "node:net";
+import { checkHost, isBlockedAddress } from "@/lib/network";
 
 export interface OgData {
   title: string | null;
   image: string | null;
 }
 
-const MAX_REDIRECTS = 4;
-const MAX_BYTES = 400_000;
-const TIMEOUT_MS = 6000;
+const MAX_REDIRECTS = 3;
+const MAX_BYTES = 512 * 1024;
+const TIMEOUT_MS = 5000;
+const REDIRECT_CODES = new Set([301, 302, 303, 307, 308]);
 
-// The server must not be usable to probe private networks.
-const blocked = new BlockList();
-for (const [net, bits] of [
-  ["0.0.0.0", 8],
-  ["10.0.0.0", 8],
-  ["100.64.0.0", 10],
-  ["127.0.0.0", 8],
-  ["169.254.0.0", 16],
-  ["172.16.0.0", 12],
-  ["192.168.0.0", 16],
-  ["224.0.0.0", 3],
-] as const) {
-  blocked.addSubnet(net, bits, "ipv4");
-}
-blocked.addAddress("::", "ipv6");
-blocked.addAddress("::1", "ipv6");
-blocked.addSubnet("fc00::", 7, "ipv6");
-blocked.addSubnet("fe80::", 10, "ipv6");
+/** Resolves like the default lookup, but refuses to connect to a blocked address. */
+const guardedLookup = ((hostname: string, options: { all?: boolean }, callback: (...args: unknown[]) => void) => {
+  dnsLookup(hostname, { all: true, verbatim: true }, (error, addresses: LookupAddress[]) => {
+    if (error) return callback(error);
+    if (addresses.length === 0 || addresses.some((a) => isBlockedAddress(a.address))) {
+      return callback(Object.assign(new Error(`Refused to connect to ${hostname}`), { code: "EBLOCKED" }));
+    }
+    if (options?.all) return callback(null, addresses);
+    callback(null, addresses[0].address, addresses[0].family);
+  });
+}) as unknown as LookupFunction;
 
-function isBlockedAddress(address: string): boolean {
-  const mapped = address.toLowerCase().match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  if (mapped) return blocked.check(mapped[1], "ipv4");
-  return blocked.check(address, isIP(address) === 6 ? "ipv6" : "ipv4");
+/** https, standard port, no credentials, and a public host. */
+async function isSafeTarget(url: URL): Promise<boolean> {
+  if (url.protocol !== "https:" || url.port !== "" || url.username || url.password) return false;
+  return (await checkHost(url.hostname)) === "public";
 }
 
-async function isPublicHttps(url: URL): Promise<boolean> {
-  if (url.protocol !== "https:") return false;
-  const host = url.hostname.replace(/^\[|\]$/g, "");
-  if (isIP(host)) return !isBlockedAddress(host);
-  try {
-    const addresses = await lookup(host, { all: true });
-    return addresses.length > 0 && addresses.every((a) => !isBlockedAddress(a.address));
-  } catch {
-    return false;
-  }
+function get(url: URL, signal: AbortSignal): Promise<IncomingMessage> {
+  return new Promise((resolve, reject) => {
+    const request = https.get(
+      url,
+      {
+        lookup: guardedLookup,
+        signal,
+        agent: false,
+        headers: {
+          "user-agent": "GiftLinkBot/1.0 (link preview)",
+          accept: "text/html",
+        },
+      },
+      resolve,
+    );
+    request.on("error", reject);
+  });
 }
 
-async function readStart(response: Response): Promise<string> {
-  if (!response.body) return "";
-  const reader = response.body.getReader();
+async function readStart(response: IncomingMessage): Promise<string> {
   const decoder = new TextDecoder();
   let html = "";
   let bytes = 0;
-  while (bytes < MAX_BYTES) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    bytes += value.byteLength;
-    html += decoder.decode(value, { stream: true });
-    if (html.includes("</head>")) break;
+  try {
+    for await (const chunk of response as AsyncIterable<Buffer>) {
+      const room = MAX_BYTES - bytes;
+      const piece = chunk.byteLength > room ? chunk.subarray(0, room) : chunk;
+      bytes += piece.byteLength;
+      html += decoder.decode(piece, { stream: true });
+      if (bytes >= MAX_BYTES || html.includes("</head>")) break;
+    }
+  } finally {
+    response.destroy();
   }
-  await reader.cancel().catch(() => undefined);
   return html;
 }
 
@@ -92,28 +106,39 @@ function metaContent(html: string, key: string): string | null {
   return null;
 }
 
+/** The preview image is loaded by the receiver's browser, so it gets the same address rules. */
+async function safeImage(raw: string | null, base: URL): Promise<string | null> {
+  if (!raw) return null;
+  try {
+    const image = new URL(raw, base);
+    if (image.toString().length > 2000) return null;
+    return (await isSafeTarget(image)) ? image.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchOg(target: string): Promise<OgData> {
   const empty: OgData = { title: null, image: null };
+  const signal = AbortSignal.timeout(TIMEOUT_MS);
   try {
     let url = new URL(target);
     for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-      if (!(await isPublicHttps(url))) return empty;
-      const response = await fetch(url, {
-        redirect: "manual",
-        signal: AbortSignal.timeout(TIMEOUT_MS),
-        headers: {
-          "user-agent": "GiftLinkBot/1.0 (link preview)",
-          accept: "text/html,application/xhtml+xml",
-        },
-      });
+      if (!(await isSafeTarget(url))) return empty;
+      const response = await get(url, signal);
+      const status = response.statusCode ?? 0;
+      const location = response.headers.location;
 
-      const location = response.headers.get("location");
-      if (response.status >= 300 && response.status < 400 && location) {
+      if (REDIRECT_CODES.has(status) && location) {
+        response.destroy();
         url = new URL(location, url);
         continue;
       }
-      if (!response.ok) return empty;
-      if (!(response.headers.get("content-type") ?? "").includes("html")) return empty;
+      const type = (response.headers["content-type"] ?? "").split(";")[0].trim().toLowerCase();
+      if (status < 200 || status >= 300 || type !== "text/html") {
+        response.destroy();
+        return empty;
+      }
 
       const html = await readStart(response);
       const rawTitle =
@@ -125,16 +150,7 @@ export async function fetchOg(target: string): Promise<OgData> {
         metaContent(html, "og:image") ??
         metaContent(html, "twitter:image");
 
-      let image: string | null = null;
-      if (rawImage) {
-        try {
-          const resolved = new URL(rawImage, url);
-          if (resolved.protocol === "https:") image = resolved.toString();
-        } catch {
-          // Unusable image URL: keep the title, drop the image.
-        }
-      }
-      return { title: rawTitle ? rawTitle.slice(0, 200) : null, image };
+      return { title: rawTitle ? rawTitle.slice(0, 200) : null, image: await safeImage(rawImage, url) };
     }
     return empty;
   } catch {

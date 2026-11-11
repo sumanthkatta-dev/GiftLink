@@ -2,16 +2,18 @@
 
 import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef, useState, useTransition, type FormEvent } from "react";
-import { checkAnswerAction, revealGiftAction, type RevealedGift } from "@/app/actions";
+import { checkAnswerAction, reportGiftAction, revealGiftAction, type RevealedGift } from "@/app/actions";
 import { Celebration, haptic, type CelebrationHandle } from "@/components/celebration/Celebration";
 import { scheduleChime } from "@/components/celebration/sound";
-import { IconLock, IconSoundOff, IconSoundOn } from "@/components/icons";
+import { EmptyState } from "@/components/EmptyState";
+import { IconGift, IconLock, IconSoundOff, IconSoundOn } from "@/components/icons";
 import { formatLocal } from "@/components/LocalTime";
 import { Wrap } from "@/components/wraps/Wrap";
 import { m } from "@/lib/messages";
+import { REPORT_REASONS, type ReportReason } from "@/lib/reports";
 import type { WrapStyle } from "@/lib/wraps";
 
-type Stage = "locked" | "question" | "wrapped" | "opening" | "revealed";
+type Stage = "locked" | "question" | "wrapped" | "opening" | "revealed" | "taken_down";
 
 export interface GiftExperienceProps {
   id: string;
@@ -106,6 +108,86 @@ function SoundToggle({ on, onChange }: { on: boolean; onChange: (on: boolean) =>
   );
 }
 
+// ------------------------------------------------------------------ Report
+
+/** A quiet link under the reveal. Opens a short list of reasons in place. */
+function ReportGift({ id }: { id: string }) {
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState<ReportReason | null>(null);
+  const [sent, setSent] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [sending, startSending] = useTransition();
+
+  if (sent) {
+    return (
+      <p role="status" className="text-[13px] text-fg-muted">
+        {m.gift.report.thanks}
+      </p>
+    );
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="text-[13px] text-fg-muted underline-offset-4 hover:text-fg hover:underline"
+      >
+        {m.gift.report.open}
+      </button>
+    );
+  }
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!reason) return;
+    setFailed(false);
+    startSending(async () => {
+      try {
+        const result = await reportGiftAction(id, reason);
+        if (result.ok) setSent(true);
+        else setFailed(true);
+      } catch {
+        setFailed(true);
+      }
+    });
+  }
+
+  return (
+    <form onSubmit={submit} className="fade-in flex w-full flex-col gap-3 text-left">
+      <fieldset className="flex flex-col gap-2">
+        <legend className="mb-2 text-[14px] font-medium">{m.gift.report.heading}</legend>
+        {REPORT_REASONS.map((value) => (
+          <label key={value} className="flex cursor-pointer items-center gap-2.5 text-[14px] text-fg-muted">
+            <input
+              type="radio"
+              name="report-reason"
+              value={value}
+              checked={reason === value}
+              onChange={() => setReason(value)}
+              className="accent-current"
+            />
+            {m.gift.report.reasons[value]}
+          </label>
+        ))}
+      </fieldset>
+      {failed && (
+        <p role="alert" className="text-[13px] font-medium text-danger">
+          {m.gift.error}
+        </p>
+      )}
+      <div className="flex gap-2">
+        <button type="submit" className="ui-button ui-button-sm ui-button-secondary" disabled={!reason || sending}>
+          {sending ? m.gift.report.sending : m.gift.report.submit}
+        </button>
+        <button type="button" className="ui-button ui-button-sm ui-button-quiet" onClick={() => setOpen(false)}>
+          {m.gift.report.cancel}
+        </button>
+      </div>
+    </form>
+  );
+}
+
 // --------------------------------------------------------------- Experience
 
 export function GiftExperience(props: GiftExperienceProps) {
@@ -115,6 +197,7 @@ export function GiftExperience(props: GiftExperienceProps) {
   const [stage, setStage] = useState<Stage>(lockedAtRender ? "locked" : afterLock);
   const [answer, setAnswer] = useState("");
   const [wrongAnswer, setWrongAnswer] = useState(false);
+  const [limited, setLimited] = useState(false);
   const [failed, setFailed] = useState(false);
   const [gift, setGift] = useState<RevealedGift | null>(null);
   const [checking, startChecking] = useTransition();
@@ -171,9 +254,12 @@ export function GiftExperience(props: GiftExperienceProps) {
     setFailed(false);
     startChecking(async () => {
       try {
-        const correct = await checkAnswerAction(id, answer);
-        setWrongAnswer(!correct);
-        if (correct) setStage("wrapped");
+        const { status } = await checkAnswerAction(id, answer);
+        setWrongAnswer(status === "wrong");
+        setLimited(status === "limited");
+        if (status === "correct") setStage("wrapped");
+        else if (status === "taken_down") setStage("taken_down");
+        else if (status === "not_found") setFailed(true);
       } catch {
         setFailed(true);
       }
@@ -211,10 +297,14 @@ export function GiftExperience(props: GiftExperienceProps) {
         clearTimeout(burstTimer.current);
         setSkew(result.serverNow - Date.now());
         setStage("locked");
-      } else if (result.status === "wrong_answer") {
+      } else if (result.status === "wrong_answer" || result.status === "limited") {
         clearTimeout(burstTimer.current);
-        setWrongAnswer(true);
+        setWrongAnswer(result.status === "wrong_answer");
+        setLimited(result.status === "limited");
         setStage("question");
+      } else if (result.status === "taken_down") {
+        clearTimeout(burstTimer.current);
+        setStage("taken_down");
       } else {
         clearTimeout(burstTimer.current);
         setFailed(true);
@@ -235,7 +325,16 @@ export function GiftExperience(props: GiftExperienceProps) {
 
   let content;
 
-  if (stage === "locked" && unlockAt) {
+  if (stage === "taken_down") {
+    content = (
+      <EmptyState
+        icon={<IconGift className="size-6" />}
+        heading={m.gift.takenDownHeading}
+        body={m.gift.takenDownBody}
+        action={{ href: "/create", label: m.gift.notFoundCta }}
+      />
+    );
+  } else if (stage === "locked" && unlockAt) {
     content = (
       <section className="arrive flex w-full flex-col items-center gap-9 text-center">
         <Wrap kind={wrapStyle} size="small" state="closed" idle note={null} receiverName={receiverName} senderName={senderName} seed={id} />
@@ -266,16 +365,17 @@ export function GiftExperience(props: GiftExperienceProps) {
             className="ui-input"
             value={answer}
             autoComplete="off"
-            aria-invalid={wrongAnswer || undefined}
-            aria-describedby={wrongAnswer ? "answer-error" : undefined}
+            aria-invalid={wrongAnswer || limited || undefined}
+            aria-describedby={wrongAnswer || limited ? "answer-error" : undefined}
             onChange={(event) => {
               setAnswer(event.target.value);
               setWrongAnswer(false);
+              setLimited(false);
             }}
           />
-          {wrongAnswer && (
+          {(wrongAnswer || limited) && (
             <p id="answer-error" role="alert" className="text-[14px] font-medium text-danger">
-              {m.gift.answerWrong}
+              {limited ? m.gift.answerLimited : m.gift.answerWrong}
             </p>
           )}
         </div>
@@ -358,6 +458,10 @@ export function GiftExperience(props: GiftExperienceProps) {
                 {m.gift.makeOne}
               </Link>
               <p className="pt-2 text-[13px] text-fg-muted">{m.gift.wrappedWith}</p>
+            </div>
+
+            <div className="arrive mt-4 flex justify-center" style={{ ["--d" as string]: "520ms" }}>
+              <ReportGift id={id} />
             </div>
           </div>
         ) : (

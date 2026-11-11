@@ -11,6 +11,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { normalizeWrap, type WrapStyle } from "@/lib/wraps";
 import { firestoreConfigured, firestoreStore } from "@/lib/firestore-store";
+import type { ReportReason } from "@/lib/reports";
 
 export type { WrapStyle };
 
@@ -34,15 +35,37 @@ export interface Gift {
   createdAt: string;
   /** ISO 8601 in UTC, or null until the receiver reaches the reveal. */
   openedAt: string | null;
+  /** How many different visitors reported the gift. Missing on older gifts, meaning 0. */
+  reportCount?: number;
 }
 
-export type NewGift = Omit<Gift, "id" | "createdAt" | "openedAt">;
+export type NewGift = Omit<Gift, "id" | "createdAt" | "openedAt" | "reportCount">;
+
+/** Gifts with this many reports stop opening. */
+export const TAKEDOWN_REPORTS = 3;
+
+export function isTakenDown(gift: Pick<Gift, "reportCount">): boolean {
+  return (gift.reportCount ?? 0) >= TAKEDOWN_REPORTS;
+}
+
+export interface Report {
+  giftId: string;
+  reason: ReportReason;
+  /** ISO 8601 in UTC. */
+  createdAt: string;
+  /** Salted hash of the reporter's IP, so one visitor counts once. */
+  reporter: string;
+}
+
+export type ReportOutcome = "added" | "duplicate" | "not_found";
 
 export interface GiftStore {
   createGift(input: NewGift): Promise<Gift>;
   getGift(id: string): Promise<Gift | null>;
   /** Sets openedAt the first time it is called. Later calls change nothing. */
   markOpened(id: string): Promise<Gift | null>;
+  /** Saves a report and counts it on the gift, once per reporter per gift. */
+  addReport(report: Report): Promise<ReportOutcome>;
 }
 
 // ---------------------------------------------------------------------------
@@ -50,6 +73,7 @@ export interface GiftStore {
 // ---------------------------------------------------------------------------
 
 const DATA_FILE = path.join(process.cwd(), "data", "gifts.json");
+const REPORTS_FILE = path.join(process.cwd(), "data", "reports.json");
 const ID_PATTERN = /^[A-Za-z0-9_-]{6,32}$/;
 
 type GiftMap = Record<string, Gift>;
@@ -71,6 +95,15 @@ async function readAll(): Promise<GiftMap> {
 async function writeAll(gifts: GiftMap): Promise<void> {
   await mkdir(path.dirname(DATA_FILE), { recursive: true });
   await writeFile(DATA_FILE, JSON.stringify(gifts, null, 2), "utf8");
+}
+
+async function readReports(): Promise<Report[]> {
+  try {
+    return JSON.parse(await readFile(REPORTS_FILE, "utf8")) as Report[];
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
 }
 
 // Writes run one at a time so two requests cannot overwrite each other.
@@ -119,6 +152,23 @@ const fileStore: GiftStore = {
       return withCurrentWrap(gift);
     });
   },
+
+  addReport(report) {
+    return exclusive(async () => {
+      if (!ID_PATTERN.test(report.giftId)) return "not_found";
+      const gifts = await readAll();
+      if (!Object.hasOwn(gifts, report.giftId)) return "not_found";
+      const reports = await readReports();
+      if (reports.some((r) => r.giftId === report.giftId && r.reporter === report.reporter)) return "duplicate";
+      reports.push(report);
+      await mkdir(path.dirname(REPORTS_FILE), { recursive: true });
+      await writeFile(REPORTS_FILE, JSON.stringify(reports, null, 2), "utf8");
+      const gift = gifts[report.giftId];
+      gift.reportCount = (gift.reportCount ?? 0) + 1;
+      await writeAll(gifts);
+      return "added";
+    });
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -139,3 +189,4 @@ const store: GiftStore = firestoreConfigured() ? firestoreStore : fileStore;
 export const createGift = store.createGift;
 export const getGift = store.getGift;
 export const markOpened = store.markOpened;
+export const addReport = store.addReport;

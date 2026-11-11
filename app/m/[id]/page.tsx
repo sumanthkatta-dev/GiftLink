@@ -10,7 +10,7 @@ import { RefreshLink } from "@/components/RefreshLink";
 import { ShareRow } from "@/components/ShareRow";
 import { m } from "@/lib/messages";
 import { keysMatch } from "@/lib/secret";
-import { getGift, type Gift } from "@/lib/store";
+import { getGift, isTakenDown, type Gift } from "@/lib/store";
 
 type Props = PageProps<"/m/[id]">;
 type Status = "opened" | "scheduled" | "waiting";
@@ -215,6 +215,12 @@ function Dashboard({ gift, manageHref }: { gift: Gift; manageHref: string }) {
           {status !== "opened" && <RefreshLink href={manageHref} />}
         </div>
       </header>
+
+      {isTakenDown(gift) && (
+        <p role="status" style={order(1)} className="arrive ui-card p-5 text-[15px] font-medium text-danger sm:p-6">
+          {m.manage.takenDown}
+        </p>
+      )}
 
       <Card i={1}>
         <CardTitle id="progress">{m.manage.progress}</CardTitle>

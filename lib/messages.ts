@@ -137,6 +137,24 @@ const en = {
     makeOne: "Make one for someone",
     wrappedWith: "Wrapped with GiftLink",
     error: "Something went wrong. Check your connection and try again.",
+    answerLimited: "Too many tries. Try again in a little while.",
+    takenDownHeading: "This gift has been taken down.",
+    takenDownBody: "People reported it, so it can no longer be opened.",
+    report: {
+      open: "Report this gift",
+      heading: "What's wrong with it?",
+      reasons: {
+        scam: "Scam or phishing",
+        malware: "Harmful download",
+        offensive: "Hateful or explicit",
+        spam: "Spam",
+        other: "Something else",
+      },
+      submit: "Send report",
+      sending: "Sending…",
+      cancel: "Cancel",
+      thanks: "Thanks. We've received your report.",
+    },
   },
 
   manage: {
@@ -191,6 +209,7 @@ const en = {
     refreshShortcut: "to refresh",
     openLink: "Open link",
     noPreview: "No preview available",
+    takenDown: "This gift was reported by several people and has been taken down. It can no longer be opened.",
   },
 
   notFound: {
@@ -207,6 +226,10 @@ const en = {
     secretPair: "Add both a question and an answer, or leave both empty.",
     wrapInvalid: "Choose a wrap style.",
     generic: "Something went wrong. Please try again.",
+    urlUnsafe: "This link looks unsafe, so it can't be wrapped.",
+    urlPrivate: "This link points to a private or local address, so it can't be wrapped.",
+    urlSelf: "That's already a GiftLink. Wrap the link it points to instead.",
+    rateLimited: "You've wrapped a lot of gifts. Try again in a little while.",
   },
 };
 

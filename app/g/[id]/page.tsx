@@ -4,7 +4,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { GiftExperience } from "@/components/GiftExperience";
 import { IconGift } from "@/components/icons";
 import { m } from "@/lib/messages";
-import { getGift } from "@/lib/store";
+import { getGift, isTakenDown } from "@/lib/store";
 
 type Props = PageProps<"/g/[id]">;
 
@@ -35,6 +35,19 @@ async function Gift({ params }: Pick<Props, "params">) {
           icon={<IconGift className="size-6" />}
           heading={m.gift.notFoundHeading}
           body={m.gift.notFoundBody}
+          action={{ href: "/create", label: m.gift.notFoundCta }}
+        />
+      </main>
+    );
+  }
+
+  if (isTakenDown(gift)) {
+    return (
+      <main className="flex min-h-dvh items-center justify-center px-5 py-16">
+        <EmptyState
+          icon={<IconGift className="size-6" />}
+          heading={m.gift.takenDownHeading}
+          body={m.gift.takenDownBody}
           action={{ href: "/create", label: m.gift.notFoundCta }}
         />
       </main>

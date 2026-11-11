@@ -77,3 +77,50 @@ service cloud.firestore {
   }
 }
 ```
+
+## Abuse protection
+
+GiftLink is open to anyone, so it guards against being used to spread bad
+links or to attack the server it runs on.
+
+**Dangerous links are refused** (`lib/safety.ts`). Every link is checked with
+the [Google Safe Browsing Lookup API v4](https://developers.google.com/safe-browsing/v4/lookup-api)
+for malware, phishing (social engineering), unwanted software and potentially
+harmful apps. If Google can't answer (no key, an error, or no reply within
+3 seconds) the gift is still created and a warning is logged. Links to private
+or local addresses, and links to GiftLink itself, are refused too.
+
+| Variable | Where it comes from |
+| --- | --- |
+| `GOOGLE_SAFE_BROWSING_API_KEY` | Google Cloud console: enable the Safe Browsing API, then APIs & Services > Credentials > Create credentials > API key. Restrict the key to the Safe Browsing API. |
+| `IP_HASH_SALT` (optional) | Any long random string. If unset, a salt is derived from `FIREBASE_PRIVATE_KEY`. |
+
+**Link previews are fetched safely** (`lib/og.ts`, `lib/network.ts`). The
+server only fetches https on the standard port, resolves the hostname first and
+refuses private, loopback, link-local and cloud metadata addresses (also at
+connect time, so DNS rebinding doesn't get around it), follows at most 3
+redirects and checks each one, stops after 5 seconds or 512 KB, and only reads
+`text/html`. Preview images must be https on a public host.
+
+**Rate limits** (`lib/rate-limit.ts`), counted in a Firestore `rateLimits`
+collection so they hold on Vercel:
+
+- creating gifts: 10 per hour and 30 per day per IP
+- wrong secret answers: 10 per gift per IP per hour
+- reports: 20 per hour per IP
+
+The IP is the first value of `x-forwarded-for` (set by Vercel), and only a
+salted hash of it is stored. Without the Firebase variables (local
+development) nothing is counted. If Firestore errors, the attempt is allowed
+and a warning is logged.
+
+To clean up old counters automatically, add a TTL policy in the Firebase
+console: Firestore > TTL policies > collection group `rateLimits`, field
+`expiresAt`. Without it, each counter is a small document that stays behind.
+
+**Reports.** The reveal screen has a quiet "Report this gift" link. Reports
+are saved in a `reports` collection (gift id, reason, time, and a salted IP
+hash so each visitor counts once per gift). A gift with 3 or more reports
+stops opening and shows "This gift has been taken down." To restore a gift,
+set its `reportCount` field back to 0 in Firestore (locally: in
+`data/gifts.json`).
